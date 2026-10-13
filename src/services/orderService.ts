@@ -29,7 +29,7 @@ export type ServiceType =
   | 'towing';        // Towing path
 
 // Category types for courier and delivery
-export type CategoryType = 'food' | 'clothes' | 'package' | 'hardware' | 'market' | 'small_shop';
+export type CategoryType = 'food' | 'clothes' | 'package' | 'hardware';
 
 // Workflow type - determines backend dispatch behavior
 export type WorkflowType = 'store_delivery' | 'direct_trip';
@@ -151,9 +151,6 @@ export interface Order {
   // Store info (exact spec)
   storeId?: string;
   storeName?: string;
-  storeImage?: string;
-  storeDistanceKm?: number | null;
-  encodedPolyline?: string;
   
   // User info (exact spec)
   userId: string;
@@ -162,7 +159,7 @@ export interface Order {
   
   // Driver info (exact spec)
   driverId?: string | null;
-  driverStatus?: 'waiting' | 'searching' | 'assigned' | 'no_driver_found';
+  driverStatus?: 'waiting' | 'searching' | 'assigned';
   driver?: DriverInfo;
   
   // Status (exact spec)
@@ -249,9 +246,6 @@ export interface CreateOrderInput {
   kg?: string;
   storeId?: string;
   storeName?: string;
-  storeImage?: string;
-  storeDistanceKm?: number | null;
-  encodedPolyline?: string;
   
   // Vehicle/truck specific
   truckType?: string;
@@ -284,8 +278,6 @@ export interface CreateOrderInput {
   promoCode?: string;
   promoDiscount?: number;
   notes?: string;
-  ratingStatus?: 'pending' | 'rated' | 'skipped';
-  ratingPromptCount?: number;
 }
 
 /**
@@ -341,9 +333,6 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
     // Store info
     ...(input.storeId && { storeId: input.storeId }),
     ...(input.storeName && { storeName: input.storeName }),
-    ...(input.storeImage && { storeImage: input.storeImage }),
-    ...(input.storeDistanceKm != null && { storeDistanceKm: input.storeDistanceKm }),
-    ...(input.encodedPolyline && { encodedPolyline: input.encodedPolyline }),
     
     // User info (REQUIRED)
     userId: input.userId,
@@ -359,9 +348,6 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
     
     // Timestamp
     createdAt: serverTimestamp(),
-
-    ...(input.ratingStatus && { ratingStatus: input.ratingStatus }),
-    ...(input.ratingPromptCount !== undefined && { ratingPromptCount: input.ratingPromptCount }),
     
     // Legacy fields for backward compatibility
     ...(input.vehicleCategory && { vehicleCategory: input.vehicleCategory }),
@@ -463,13 +449,6 @@ export function subscribeToOrder(
   });
 }
 
-export async function markOrderRated(orderId: string): Promise<void> {
-  await updateDoc(doc(db, 'orders', orderId), {
-    ratingStatus: 'rated',
-    ratedAt: serverTimestamp(),
-  });
-}
-
 /**
  * Update driver location in order
  */
@@ -487,7 +466,7 @@ export async function updateDriverLocation(
  * Helper to get display text for status
  */
 export function getStatusDisplayText(status: OrderStatus, serviceType: ServiceType): string {
-  const isDelivery = ['food', 'clothes', 'hardware', 'market', 'small_shop', 'package'].includes(serviceType);
+  const isDelivery = ['food', 'clothes', 'hardware', 'package'].includes(serviceType);
   const isTowing = serviceType === 'towing';
   const isTruck = serviceType === 'truck';
   

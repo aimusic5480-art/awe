@@ -1,35 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ShoppingCart, Plus, Minus } from 'lucide-react';
 import { useGlobalCart } from '../contexts/GlobalCartContext';
 import { CrossStoreModal } from '../components/CrossStoreModal';
 import { fetchStoreById, fetchProductsByStore } from '../services/storeService';
-import { buildAvailableTabs, getProductCategoryKey, Product } from '../data/storesData';
-import { DEFAULT_ITEM_KG, parseUnitToKg } from '../utils/weightUtils';
-
-type CategoryTab = { label: string; value: string };
-
-const hardwareCategoryDefinitions: CategoryTab[] = [
-  { label: 'Building Materials', value: 'building_materials' },
-  { label: 'Roofing', value: 'roofing' },
-  { label: 'Plumbing', value: 'plumbing' },
-  { label: 'Electrical', value: 'electrical' },
-  { label: 'Paint & Finishes', value: 'paint_and_finishes' },
-  { label: 'Tools & Equipment', value: 'tools_and_equipment' },
-  { label: 'Doors Windows & Locks', value: 'doors_windows_and_locks' },
-  { label: 'Nails Screws & Fasteners', value: 'nails_screws_and_fasteners' },
-  { label: 'Garden & Outdoor', value: 'garden_and_outdoor' },
-  { label: 'Safety Gear', value: 'safety_gear' },
-  { label: 'Other', value: 'other' },
-];
-
-const hardwareCategoryKeys = new Set(hardwareCategoryDefinitions.map(tab => tab.value));
-
-const getHardwareCategoryKey = (product: Product): string => {
-  const key = getProductCategoryKey(product);
-  return hardwareCategoryKeys.has(key) ? key : 'other';
-};
+import { Product } from '../data/storesData';
 
 // Skeleton Card Component - Uber/Bolt style animated placeholder
 const ProductSkeletonCard: React.FC<{ index: number }> = ({ index }) => (
@@ -64,7 +40,6 @@ export const OrderHardware: React.FC = () => {
   const [storeName, setStoreName] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('all');
   // Product the user tried to add when blocked by the cross-store guard
   const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
 
@@ -101,32 +76,10 @@ export const OrderHardware: React.FC = () => {
     loadStoreData();
   }, [storeId, navigate]);
 
-  const availableCategoryTabs = useMemo(
-    () => buildAvailableTabs(products, hardwareCategoryDefinitions, getHardwareCategoryKey),
-    [products],
-  );
-  const activeCategory = availableCategoryTabs.length <= 1 ||
-    (selectedCategory !== 'all' && !availableCategoryTabs.some(tab => tab.value === selectedCategory))
-    ? 'all'
-    : selectedCategory;
-
-  useEffect(() => {
-    if (selectedCategory !== activeCategory) setSelectedCategory(activeCategory);
-  }, [activeCategory, selectedCategory]);
-
-  const visibleProducts = useMemo(
-    () => activeCategory === 'all'
-      ? products
-      : products.filter(product => getHardwareCategoryKey(product) === activeCategory),
-    [products, activeCategory],
-  );
-
   const cartCount = cart.length;
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
-  const buildCartItem = (product: Product) => {
-    const explicitKg = (product as Product & { weightKg?: number }).weightKg;
-    return {
+  const buildCartItem = (product: Product) => ({
     id: `${product.id}-${Date.now()}`,
     storeId: storeId!,
     storeName: storeName,
@@ -135,12 +88,7 @@ export const OrderHardware: React.FC = () => {
     name: product.name,
     image: product.imageUrl,
     price: product.price,
-    kg: typeof explicitKg === 'number' && explicitKg > 0
-      ? explicitKg
-      : parseUnitToKg(product.unit, DEFAULT_ITEM_KG.hardware),
-    unit: product.unit,
-    };
-  }
+  });
 
   const handleAddToCart = (product: Product) => {
     const added = addToCart(buildCartItem(product));
@@ -169,7 +117,7 @@ export const OrderHardware: React.FC = () => {
 
   const handleCompleteOrder = () => {
     if (cartCount === 0) return;
-    navigate('/foodies-route');
+    navigate('/foodies-route', { replace: true });
   };
 
   const containerVariants = {
@@ -282,34 +230,8 @@ export const OrderHardware: React.FC = () => {
         className="flex-1 overflow-y-auto px-4 pb-24 pt-4"
         style={{ marginTop: '120px' }}
       >
-        {availableCategoryTabs.length > 1 && (
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Hardware categories">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeCategory === 'all'}
-              onClick={() => setSelectedCategory('all')}
-              className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold transition-colors ${activeCategory === 'all' ? 'bg-amber-600 text-white shadow-sm' : 'bg-white text-gray-600 shadow-sm hover:bg-amber-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-            >
-              All
-            </button>
-            {availableCategoryTabs.map(tab => (
-              <button
-                key={tab.value}
-                type="button"
-                role="tab"
-                aria-selected={activeCategory === tab.value}
-                onClick={() => setSelectedCategory(tab.value)}
-                className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold transition-colors ${activeCategory === tab.value ? 'bg-amber-600 text-white shadow-sm' : 'bg-white text-gray-600 shadow-sm hover:bg-amber-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
-
         <div className="grid grid-cols-2 gap-4">
-          {visibleProducts.map((product) => {
+          {products.map((product) => {
             const count = getProductCount(product.id);
 
             return (

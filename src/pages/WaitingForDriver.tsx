@@ -8,7 +8,6 @@ import { db } from '../config/firebase';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { subscribeToOrder, cancelOrder } from '../services/orderService';
 import { usePreventBack } from '../hooks/usePreventBack';
-import { ActiveOrder, buildTrackingState } from '../hooks/useActiveOrder';
 
 interface WaitingForDriverProps {
   destination: string;
@@ -49,7 +48,7 @@ export const WaitingForDriver: React.FC<WaitingForDriverProps> = ({
     useFirestore = false // Flag to determine which DB to use
   } = location.state || {};
   
-  const isFood = orderType === 'food' || orderType === 'small_shop' || orderType === 'market';
+  const isFood = orderType === 'food';
   // Services that use the ride-like flow (no store)
   const isRideLikeService = orderType === 'package' || orderType === 'towing' || orderType === 'truck';
   const isService = orderType === 'service' || isRideLikeService;
@@ -138,14 +137,23 @@ export const WaitingForDriver: React.FC<WaitingForDriverProps> = ({
       if (order.status === 'accepted' || order.status === 'arriving') {
         setIsScanning(false);
         setTimeout(() => {
-          const trackingOrder = {
-            ...orderData,
-            ...order,
-            encodedPolyline: order.encodedPolyline || encodedPolyline,
-          } as ActiveOrder;
           navigate('/driver-coming', {
-            state: buildTrackingState(trackingOrder, orderId),
-            replace: true,
+            state: {
+              orderId,
+              orderType: order.serviceType,
+              orderData: {
+                ...orderData,
+                ...order,
+                pickup: order.pickup?.address,
+                destination: order.dropoff?.address,
+                driverId: order.driver?.id,
+                driverInfo: order.driver,
+                encodedPolyline,
+                // Explicitly forward these so DriverComing's mount effect can seed immediately
+                driverToPickupPolyline: (order as any).driverToPickupPolyline ?? undefined,
+                driverToPickupEtaMinutes: (order as any).driverToPickupEtaMinutes ?? undefined,
+              }
+            }
           });
         }, 500);
       }
@@ -183,8 +191,11 @@ export const WaitingForDriver: React.FC<WaitingForDriverProps> = ({
       }
 
       // Clear localStorage
+      localStorage.removeItem('currentOrderId');
+      localStorage.removeItem('currentOrderType');
+
       setShowCancelConfirmation(false);
-      navigate('/', { replace: true });
+      navigate('/');
     } catch (error) {
       console.error('Error cancelling order:', error);
       setShowCancelConfirmation(false);

@@ -7,9 +7,9 @@ import { ScrollableSection } from '../components/ScrollableSection';
 import { BottomNavigation } from '../components/BottomNavigation';
 import { MapLibreMap } from '../components/MapLibreMap';
 import { getRecentAddresses, reverseGeocode, GeoapifyAddress, RECENT_ADDRESSES_UPDATED_EVENT } from '../services/geoapifyService';
+import { useRideContext } from '../contexts/RideContext';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useNearbyDrivers, LUSAKA_DEFAULT } from '../hooks/useNearbyDrivers';
-import { useActiveOrder } from '../hooks/useActiveOrder';
 
 interface DashboardProps {
   onSearchSelect: (address: string) => void;
@@ -18,8 +18,7 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ onSearchSelect }) => {
   const navigate = useNavigate();
   const [panelHeight, setPanelHeight] = useState(450);
-  const { order: activeOrder } = useActiveOrder();
-  const isRideActive = Boolean(activeOrder);
+  const { isRideActive, rideStatus } = useRideContext();
   const { latitude, longitude, loading: locationLoading, error: locationError } = useGeolocation();
   const [recentAddresses, setRecentAddresses] = useState<GeoapifyAddress[]>([]);
   const [isLoadingRecentAddress, setIsLoadingRecentAddress] = useState(false);
@@ -46,19 +45,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSearchSelect }) => {
     };
   }, []);
 
+  const handleNavigationBlock = (destination: string) => {
+    const message = rideStatus === 'pending'
+      ? 'You already have an active request.'
+      : 'You already have an active ride.';
+    alert(message);
+    navigate(destination);
+  };
+
   const handleRidesClick = () => {
-    if (isRideActive) return;
-    navigate('/your-route');
+    if (isRideActive || rideStatus === 'pending') {
+      handleNavigationBlock(rideStatus === 'pending' ? '/waiting-for-driver' : '/driver-coming');
+    } else {
+      navigate('/your-route');
+    }
   };
 
   const handleWhereToClick = () => {
-    if (isRideActive) return;
-    navigate('/your-route');
+    if (isRideActive || rideStatus === 'pending') {
+      handleNavigationBlock(rideStatus === 'pending' ? '/waiting-for-driver' : '/driver-coming');
+    } else {
+      navigate('/your-route');
+    }
   };
 
   // Handle recent address click - get current location and navigate to SelectRide
   const handleRecentAddressClick = useCallback(async (recentAddress: GeoapifyAddress) => {
-    if (isRideActive) return;
+    if (isRideActive || rideStatus === 'pending') {
+      handleNavigationBlock(rideStatus === 'pending' ? '/waiting-for-driver' : '/driver-coming');
+      return;
+    }
 
     // Show loading state
     setIsLoadingRecentAddress(true);
@@ -107,10 +123,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSearchSelect }) => {
     } finally {
       setIsLoadingRecentAddress(false);
     }
-  }, [latitude, longitude, locationLoading, locationError, isRideActive, navigate]);
+  }, [latitude, longitude, locationLoading, locationError, isRideActive, rideStatus, navigate]);
 
   const handleAletwendeClick = () => {
-    if (isRideActive) return;
     navigate('/aletwende-send');
   };
 
@@ -154,15 +169,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSearchSelect }) => {
               <motion.button
                 key={service.id}
                 onClick={() => {
-                  if (isRideActive) return;
                   if (service.action) {
                     service.action();
                   } else if (service.id === 'schedule') {
                     navigate('/schedule-ride');
                   }
                 }}
-                disabled={isRideActive}
-                className="bg-gray-100 dark:bg-gray-800 rounded-2xl p-3 text-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                className="bg-gray-100 dark:bg-gray-800 rounded-2xl p-3 text-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-all"
                 whileTap={{ scale: 0.95 }}
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -182,7 +195,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSearchSelect }) => {
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                 <button
                   onClick={handleWhereToClick}
-                  disabled={isRideActive}
                   className="w-full pl-12 pr-4 py-3 text-left text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors bg-transparent"
                 >
                   Where to?
@@ -190,8 +202,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSearchSelect }) => {
               </div>
               {/* Schedule button inside search box */}
               <button
-                onClick={() => !isRideActive && navigate('/schedule-ride')}
-                disabled={isRideActive}
+                onClick={() => navigate('/schedule-ride')}
                 className="px-4 py-3 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors border-l border-gray-200 dark:border-gray-700"
               >
                 <Calendar className="text-gray-600 dark:text-gray-300" size={20} />
@@ -221,7 +232,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSearchSelect }) => {
                     <motion.button
                       key={search.id}
                       onClick={() => handleRecentAddressClick(search)}
-                      disabled={isLoadingRecentAddress || isRideActive}
+                      disabled={isLoadingRecentAddress}
                       className="w-full flex items-center space-x-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors text-left disabled:opacity-50"
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}

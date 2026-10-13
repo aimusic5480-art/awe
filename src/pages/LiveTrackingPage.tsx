@@ -17,7 +17,6 @@ import { auth } from '../config/firebase';
 import { soundManager } from '../utils/notificationSound';
 import { usePreventBack } from '../hooks/usePreventBack';
 import { useGeolocation } from '../hooks/useGeolocation';
-import { markOrderRated } from '../services/orderService';
 
 interface OrderItem {
   name: string;
@@ -771,9 +770,8 @@ export const LiveTrackingPage: React.FC = () => {
         isOpen={showRatingModal}
         onClose={() => {
           setShowRatingModal(false);
-          navigate('/', { replace: true });
+          navigate('/');
         }}
-        onSubmitted={() => orderId ? markOrderRated(orderId) : undefined}
         path="store_delivery"
         driverName={driverData?.name || 'Driver'}
         driverPhoto={driverData?.profileImage || driverData?.photo || ''}

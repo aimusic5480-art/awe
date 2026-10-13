@@ -8,7 +8,6 @@ import { apiPost } from '../config/api';
 import { MapLibreMap, MapMarker } from '../components/MapLibreMap';
 import { LocationPickerOverlay, LocationEditMode, LocationCoordinate } from '../components/LocationPickerOverlay';
 import { useNearbyDrivers, LUSAKA_DEFAULT } from '../hooks/useNearbyDrivers';
-import { haversineDistanceKm } from '../utils/geoUtils';
 import {
   BackendRideOption,
   getVehicleConfig,
@@ -54,7 +53,7 @@ const DeliverySkeletonCard: React.FC<{ index: number }> = ({ index }) => (
 export function FoodDelivery() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { cart, getKgRange, getTotalKgExact } = useGlobalCart();
+  const { cart, getKgRange } = useGlobalCart();
   const { latitude, longitude } = useGeolocation();
 
   // Load data from localStorage (from FoodiesRoute)
@@ -119,29 +118,10 @@ export function FoodDelivery() {
   const deliveryLocation = routeData?.deliveryLocation || '';
   const stops = routeData?.stops || [];
   const category = routeData?.category || cart[0]?.category || 'food';
-  const storeDistanceKm = useMemo(() => {
-    const storeLocation = routeData?.storeLocation;
-    const deliveryCoords = routeData?.deliveryCoords;
-    if (
-      deliveryCoords?.lat == null ||
-      deliveryCoords?.lng == null ||
-      storeLocation?.lat == null ||
-      storeLocation?.lng == null
-    ) {
-      return null;
-    }
-    return haversineDistanceKm(deliveryCoords.lat, deliveryCoords.lng, storeLocation.lat, storeLocation.lng);
-  }, [
-    routeData?.deliveryCoords?.lat,
-    routeData?.deliveryCoords?.lng,
-    routeData?.storeLocation?.lat,
-    routeData?.storeLocation?.lng,
-  ]);
 
   // Determine service type based on category
-  // food, clothes, market, and small shops use 'courier'; hardware uses 'delivery'
-  const totalKg = getTotalKgExact();
-  const serviceType = category === 'hardware' || totalKg > 200 ? 'delivery' : 'courier';
+  // food/clothes use 'courier', hardware uses 'delivery'
+  const serviceType = category === 'hardware' ? 'delivery' : 'courier';
 
   // CART IS THE SINGLE SOURCE OF TRUTH
   const totalItemCount = useMemo(() => cart.length, [cart.length]);
@@ -196,16 +176,8 @@ export function FoodDelivery() {
         dropLat: deliveryCoords.lat,
         dropLng: deliveryCoords.lng,
         serviceType: serviceType,
-        category,
-        kg: kgRange,
-        totalKg,
-        items: cart.map(item => ({ id: item.id, name: item.name, unit: item.unit ?? null, kg: item.kg ?? 0 })),
-        storeId: routeData?.storeId || cart[0]?.storeId || '',
-        storeName: routeData?.storeName || cart[0]?.storeName || '',
-        storeDistanceKm,
-        customerLat: latitude,
-        customerLng: longitude,
-        storeCategory: category,
+        category: category,
+        kg: kgRange
       };
 
       console.log('[v0] Sending delivery payload:', payload);
@@ -218,16 +190,12 @@ export function FoodDelivery() {
       const optionsArray = Array.isArray(options) ? options : [];
       
       // Filter options by service type before setting state
-      const filteredOptions = filterOptionsByService(optionsArray, serviceType)
-        .filter(option => option.tooHeavy !== true);
+      const filteredOptions = filterOptionsByService(optionsArray, serviceType);
 
       // Enrich each option with dispatchService and vehicleCategory
       const enrichedOptions = filteredOptions.map(opt => enrichRideOption(opt, serviceType));
 
       setDeliveryOptions(enrichedOptions);
-      if (!enrichedOptions.some(option => option.enabled)) {
-        console.warn('[delivery] no enabled vehicle', { pickupLat: storeLocation.lat, pickupLng: storeLocation.lng, totalKg, serviceType });
-      }
 
       // Auto-select first enabled vehicle
       const firstEnabled = enrichedOptions.find((x: BackendRideOption) => x.enabled);
@@ -241,7 +209,7 @@ export function FoodDelivery() {
     } finally {
       setIsLoading(false);
     }
-  }, [routeData, cart, deliveryLocation, stops, serviceType, category, getKgRange, latitude, longitude, totalKg, storeDistanceKm]);
+  }, [routeData, cart, deliveryLocation, stops, serviceType, category, getKgRange]);
 
   // Re-fetch on every navigation to this page so the backend is called fresh
   // each time (e.g. returning after changing the delivery address or stops).
@@ -270,10 +238,8 @@ export function FoodDelivery() {
 
   // Get sorted delivery options - recommended first, then by filter criteria
   const getSortedOptions = (): BackendRideOption[] => {
-    // Standard preserves the backend's order; alternate tabs sort with recommended first.
-    let sorted = selectedFilter === 'standard'
-      ? [...deliveryOptions]
-      : sortOptionsWithRecommendedFirst(deliveryOptions);
+    // Start with recommended sorting
+    let sorted = sortOptionsWithRecommendedFirst(deliveryOptions);
 
     if (selectedFilter === 'faster') {
       sorted.sort((a, b) => {
@@ -390,7 +356,9 @@ export function FoodDelivery() {
     const destinationCoords = deliveryCoords?.lat && deliveryCoords?.lng
       ? { lat: deliveryCoords.lat, lng: deliveryCoords.lng }
       : undefined;
+
 navigate('/confirm-order', {
+    replace: true,
     state: {
         orderType: 'delivery',
         type: category,
@@ -424,13 +392,6 @@ navigate('/confirm-order', {
           storeAddress: storeAddress,
           storeLocation: storeLocation,
           storeImage: routeData.storeImage || '',
-          category,
-          storeCategory: category,
-          totalKg,
-          kg: getKgRange(),
-          customerLat: latitude,
-          customerLng: longitude,
-          storeDistanceKm,
           destinationAddress: routeData.deliveryLocation || 'Destination',
           stops: stops || [],
           items: cart,
@@ -725,9 +686,11 @@ navigate('/confirm-order', {
                 Retry
               </motion.button>
             </div>
-          ) : !deliveryOptions.some(option => option.enabled) ? (
+          ) : !hasOptions ? (
+            /* EMPTY STATE */
             <div className="flex flex-col items-center justify-center py-8">
-              <p className="text-gray-600 text-center mb-2">No drivers near {routeData?.storeName || cart[0]?.storeName || 'the store'} right now. Try again in a few minutes.</p>
+              <p className="text-gray-600 text-center mb-2">No delivery vehicles available</p>
+              <p className="text-gray-400 text-sm text-center mb-4">Try again in a moment</p>
               <motion.button
                 onClick={handleRetry}
                 className="flex items-center gap-2 px-4 py-2 bg-[#5B2EFF] text-white rounded-full font-medium"
@@ -775,7 +738,7 @@ navigate('/confirm-order', {
                           <div className="flex items-center gap-2">
                             <h3 className="font-bold text-gray-900 dark:text-white">{option.title}</h3>
                             {option.recommended && (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
                                 Recommended
                               </span>
                             )}
@@ -801,7 +764,6 @@ navigate('/confirm-order', {
                   </motion.button>
                 );
               })}
-              <p className="text-xs text-gray-500">Total weight about {totalKg} kg</p>
             </div>
           )}
 

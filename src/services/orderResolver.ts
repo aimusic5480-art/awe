@@ -8,7 +8,7 @@
 import { Store, Product, StoreCategory } from '../data/storesData';
 import { fetchStores, fetchStoresByCategory, fetchProductsByStore } from './storeService';
 
-export type CategoryType = 'food' | 'clothes' | 'hardware' | 'market' | 'small_shop';
+export type CategoryType = 'food' | 'clothes' | 'hardware';
 
 export interface OrderPayload {
   category: CategoryType;

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users } from 'lucide-react';
 import { MapLibreMap, MapMarker } from '../components/MapLibreMap';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { useActiveOrder } from '../hooks/useActiveOrder';
+import { useRideContext } from '../contexts/RideContext';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { auth } from '../config/firebase';
@@ -61,8 +61,7 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const { profile } = useUserProfile();
-  const { order: activeOrder } = useActiveOrder();
-  const isRideActive = Boolean(activeOrder);
+  const { isRideActive } = useRideContext();
   const { latitude, longitude } = useGeolocation();
 
   const {
@@ -92,8 +91,6 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
   const isFood = orderType === 'food' || type === 'food';
   const isClothes = type === 'clothes';
   const isHardware = type === 'hardware';
-  const isSmallShop = type === 'small_shop';
-  const isMarket = type === 'market';
   
   // isService covers special services (package, towing, truck) that don't have stores
   // MUST be checked BEFORE isRide since serviceType takes priority
@@ -104,7 +101,7 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
   const isRide = orderType === 'ride' && rideData && !isService;
   
   // isStoreDelivery covers all store-based delivery flows (food, clothes, hardware)
-  const isStoreDelivery = isDelivery || isFood || isClothes || isHardware || isSmallShop;
+  const isStoreDelivery = isDelivery || isFood || isClothes || isHardware;
 
   // Get final addresses based on flow type
   const finalDestination = isRide 
@@ -156,7 +153,6 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
    * - Clothes: serviceType = "courier", category = "clothes"
    * - Package: serviceType = "courier", category = "package"
    * - Hardware: serviceType = "delivery", category = "hardware"
-   * - Small Shops: serviceType = "courier", category = "small_shop"
    * - Truck: serviceType = "delivery_truck"
    * - Towing: serviceType = "towing"
    * 
@@ -177,7 +173,7 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
     let dispatchServiceValue: string | undefined = undefined;
     
     // REQUIRED: Determine workflowType for backend dispatch logic
-    // "store_delivery" = food, clothes, hardware, small_shop (wait for store ready_for_pickup)
+    // "store_delivery" = food, clothes, hardware (wait for store ready_for_pickup)
     // "direct_trip" = ride, package, delivery_truck, towing (dispatch immediately)
     let workflowType: WorkflowType = 'direct_trip'; // Default to direct_trip
 
@@ -228,12 +224,6 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
       workflowType = 'store_delivery'; // Hardware is store delivery
       subType = orderData.dispatchService || orderData.deliveryMode?.id || 'car';
       dispatchServiceValue = orderData.dispatchService;
-    } else if (isSmallShop || isMarket) {
-      svcType = 'courier';
-      category = isMarket ? 'market' : 'small_shop';
-      workflowType = 'store_delivery';
-      subType = orderData.dispatchService || orderData.deliveryMode?.id || 'motorbike';
-      dispatchServiceValue = orderData.dispatchService;
     } else if (isRide) {
       // Ride flow -> serviceType: "ride"
       svcType = 'ride';
@@ -261,7 +251,7 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
       || '';
 
     // Build order input with EXACT document structure
-    const orderInput: CreateOrderInput & Record<string, unknown> = {
+    const orderInput: CreateOrderInput = {
       // User info
       userId,
       userName,
@@ -284,11 +274,9 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
       pickupLat: pickupCoords?.lat || latitude || null,
       pickupLng: pickupCoords?.lng || longitude || null,
       dropLat: destinationCoords?.lat || null,
-  dropLng: destinationCoords?.lng || null,
-  customerLat: orderData.customerLat ?? null,
-  customerLng: orderData.customerLng ?? null,
-
-  // Pricing
+      dropLng: destinationCoords?.lng || null,
+      
+      // Pricing
       fee: isRide ? rideData?.estimatedPrice : (vehicle?.price || orderData.deliveryFee || 0),
       subtotal: orderData.subtotal || orderData.foodSubtotal || 0,
       total: isRide ? rideData?.estimatedPrice : (orderData.totalPrice || vehicle?.price || 0),
@@ -299,14 +287,8 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
         : (parseInt(orderData.deliveryMode?.time) || vehicle?.eta || 20),
       
       // Store info (for store-based orders)
-  storeName: orderData.storeName || '',
-  storeImage: orderData.storeImage || '',
-  totalKg: typeof orderData.totalKg === 'number' ? orderData.totalKg : 0,
-  kg: orderData.kg || '',
-  storeCategory: orderData.storeCategory || category,
-  storeId: orderData.storeId || null,
-  storeDistanceKm: orderData.storeDistanceKm ?? null,
-  encodedPolyline: encodedPolyline || orderData.encodedPolyline || undefined,
+      storeId: orderData.storeId || '',
+      storeName: orderData.storeName || '',
       
       // Stops - use real coordinates. For ride flows the stops are address
       // strings paired with stopCoords; for store deliveries each stop is an
@@ -322,12 +304,10 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
       vehicleTitle: isRide ? rideData?.name : (vehicle?.name || orderData.deliveryMode?.label || ''),
       paymentMethod: 'cash',
       currency: 'ZMW',
-      ratingStatus: 'pending',
-      ratingPromptCount: 0,
     };
 
     // Add items for store-based orders (food, clothes, hardware)
-    if (isStoreDelivery || category === 'food' || category === 'clothes' || category === 'hardware' || category === 'small_shop') {
+    if (isStoreDelivery || category === 'food' || category === 'clothes' || category === 'hardware') {
       const cleanItems = (orderData.items || []).map((item: any) => ({
         id: item.id || '',
         name: item.name || '',
@@ -336,8 +316,6 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
         image: item.image || '',
         storeName: orderData.storeName || '',
         storeId: orderData.storeId || '',
-        unit: item.unit ?? null,
-        kg: item.kg ?? 0,
       }));
       orderInput.items = cleanItems;
       orderInput.kg = orderData.kg || '';
@@ -388,6 +366,10 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
       // Use unified order creation for all service types
       const orderId = await createUnifiedOrder();
 
+      // Store order ID and type in localStorage
+      localStorage.setItem('currentOrderId', orderId);
+      localStorage.setItem('currentOrderType', isService ? serviceType : (isDelivery || isFood ? (type || 'food') : 'ride'));
+
       // Notify parent component
       if (onRideCreated) {
         onRideCreated(orderId);
@@ -402,7 +384,6 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
       const navigateTo = isStoreFlow ? '/order-tracking' : '/waiting-for-driver';
 
       navigate(navigateTo, {
-        replace: true,
         state: {
           orderId,
           orderType: isService ? serviceType : (isStoreFlow ? (type || 'food') : 'ride'),

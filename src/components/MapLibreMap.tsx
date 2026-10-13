@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import * as maplibregl from 'maplibre-gl';
+import maplibregl from 'maplibre-gl';
 import polyline from '@mapbox/polyline';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getDriverVehicleIcon } from '../utils/vehicleIconHelper';

@@ -2,7 +2,6 @@
 import { Home, Calendar, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { useActiveOrder } from '../hooks/useActiveOrder';
 
 interface BottomNavigationProps {
   activeTab?: string;
@@ -14,7 +13,6 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   onTabChange 
 }) => {
   const navigate = useNavigate();
-  const { order: activeOrder } = useActiveOrder();
 
   const tabs = [
     { id: 'home', label: 'Home', icon: Home },
@@ -23,7 +21,6 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   ];
 
   const handleTabClick = (tabId: string) => {
-    if (activeOrder) return;
     onTabChange?.(tabId);
     
     if (tabId === 'home') {

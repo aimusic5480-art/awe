@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence, PanInfo, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { X, Plus, Calendar, Users, User, Briefcase, ChevronDown, RefreshCw } from 'lucide-react';
 import { PromoDetailsPanel } from '../components/PromoDetailsPanel';
-import { useActiveOrder } from '../hooks/useActiveOrder';
+import { useRideContext } from '../contexts/RideContext';
 import { apiPost } from '../config/api';
 import { MapLibreMap, MapMarker } from '../components/MapLibreMap';
 import { LocationPickerOverlay, LocationEditMode, LocationCoordinate, formatCoordinateAddress } from '../components/LocationPickerOverlay';
@@ -68,8 +68,7 @@ export const SelectRide: React.FC<SelectRideProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { order: activeOrder } = useActiveOrder();
-  const isRideActive = Boolean(activeOrder);
+  const { isRideActive } = useRideContext();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -337,6 +336,7 @@ export const SelectRide: React.FC<SelectRideProps> = ({
       
       // Navigate to confirm order with all ride/service data
       navigate('/confirm-order', {
+        replace: true,
         state: {
           // For service flows, pass orderType as the serviceType so ConfirmOrder can identify the flow
           orderType: isServiceFlow ? serviceType : 'ride',
@@ -492,7 +492,17 @@ export const SelectRide: React.FC<SelectRideProps> = ({
       >
         <div className="bg-white rounded-2xl shadow-lg px-4 py-3 flex items-center gap-3">
           <button
-            onClick={onBack}
+            onClick={() => navigate('/your-route', {
+              replace: true,
+              state: {
+                prefilledDestination: effectiveDestination,
+                prefilledPickup: effectivePickup,
+                prefilledPickupCoords: effectivePickupCoords,
+                prefilledDestinationCoords: effectiveDestinationCoords,
+                prefilledStops: navStops.length > 0 ? navStops : stops,
+                prefilledStopCoords: location.state?.stopCoords || []
+              }
+            })}
             className="flex-shrink-0 w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors"
           >
             <X size={20} className="text-gray-700" />
@@ -516,6 +526,7 @@ export const SelectRide: React.FC<SelectRideProps> = ({
 
           <button
             onClick={() => navigate('/your-route', {
+              replace: true,
               state: {
                 highlightAddStop: true,
                 prefilledDestination: effectiveDestination,

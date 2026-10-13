@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Star, X } from 'lucide-react';
+import { Star } from 'lucide-react';
 import { safeJson } from '../config/api';
 
 interface RatingModalProps {
@@ -15,8 +15,6 @@ interface RatingModalProps {
   storeName?: string;
   storeImage?: string;
   storeId?: string;
-  onSubmitted?: () => void | Promise<void>;
-  canClose?: boolean;
 }
 
 const RATING_EMOJIS: Record<number, string> = {
@@ -38,8 +36,6 @@ export const RatingModal: React.FC<RatingModalProps> = ({
   storeName,
   storeImage,
   storeId,
-  onSubmitted,
-  canClose = false,
 }) => {
   // State for current step (1 = driver, 2 = store for store_delivery)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
@@ -127,7 +123,6 @@ export const RatingModal: React.FC<RatingModalProps> = ({
       if (path === 'direct_trip') {
         // Direct trip: submit driver rating and close
         await submitDriverRating(rating, feedback);
-        await onSubmitted?.();
         onClose();
       } else {
         // Store delivery path
@@ -151,7 +146,6 @@ export const RatingModal: React.FC<RatingModalProps> = ({
             submitDriverRating(driverRating.rating, driverRating.feedback),
             submitStoreRating(rating, feedback),
           ]);
-          await onSubmitted?.();
           onClose();
         }
       }
@@ -193,16 +187,6 @@ export const RatingModal: React.FC<RatingModalProps> = ({
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             >
               {/* Step Indicator for store_delivery path */}
-              {canClose && (
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="absolute right-4 top-4 rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  aria-label="Close rating"
-                >
-                  <X size={20} />
-                </button>
-              )}
               {path === 'store_delivery' && (
                 <motion.div
                   key={currentStep}

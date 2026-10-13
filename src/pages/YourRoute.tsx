@@ -28,6 +28,7 @@ export const YourRoute: React.FC<YourRouteProps> = ({ onRouteComplete }) => {
 
   const serviceType: ServiceType = location.state?.serviceType || 'ride';
   const editMode = location.state?.editMode === true;
+  const returnTo: string | undefined = location.state?.returnTo;
   const editOrderId: string | undefined = location.state?.orderId;
   const editOrderType: string | undefined = location.state?.orderType;
   const editDriverId: string | null = location.state?.driverId || null;
@@ -281,8 +282,7 @@ export const YourRoute: React.FC<YourRouteProps> = ({ onRouteComplete }) => {
       driverId: editDriverId,
       stops: stopsPayload
     }).then((result: any) => {
-      navigate('/driver-coming', {
-        replace: true,
+      navigate(returnTo === 'driver-coming' ? '/driver-coming' : -1 as any, {
         state: {
           orderId: editOrderId,
           orderType: editOrderType,
@@ -372,6 +372,7 @@ export const YourRoute: React.FC<YourRouteProps> = ({ onRouteComplete }) => {
     } else if (checkFieldsFilled() && (serviceType === 'ride' || serviceType === 'package' || serviceType === 'truck')) {
       onRouteComplete?.(newPickup, newDestination, newStops);
 navigate('/select-ride', {
+      replace: true,
       state: {
         serviceType,
         pickup: newPickup,
@@ -449,6 +450,7 @@ navigate('/select-ride', {
 
     onRouteComplete?.(pickup, destination, stops);
     navigate('/select-ride', {
+      replace: true,
       state: {
         serviceType,
         pickup,

@@ -22,7 +22,6 @@ import { useGeolocation } from '../hooks/useGeolocation';
 import { 
   subscribeToOrder, 
   cancelOrder, 
-  markOrderRated,
   Order, 
   OrderStatus
 } from '../services/orderService';
@@ -112,7 +111,7 @@ export const DriverComing: React.FC<DriverComingProps> = ({
     orderData = {}
   } = location.state || {};
   
-  const isFood = orderType === 'food' || orderType === 'small_shop' || orderType === 'market';
+  const isFood = orderType === 'food';
   const isService = orderType === 'service' || ['package', 'towing', 'truck'].includes(orderType);
   const isRide = orderType === 'ride';
   const orderId = stateOrderId || requestId || currentRideId;
@@ -862,9 +861,8 @@ export const DriverComing: React.FC<DriverComingProps> = ({
           setIsRatingModalOpen(false);
           localStorage.removeItem('currentOrderId');
           localStorage.removeItem('currentOrderType');
-          navigate('/', { replace: true });
+          navigate('/');
         }}
-        onSubmitted={() => orderId ? markOrderRated(orderId) : undefined}
         path={isFood ? 'store_delivery' : 'direct_trip'}
         driverName={driverInfo?.name || 'Driver'}
         driverPhoto={driverInfo?.photo || ''}

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
-export type DeliveryCategory = 'food' | 'clothes' | 'hardware' | 'market' | 'small_shop';
+export type DeliveryCategory = 'food' | 'clothes' | 'hardware';
 
 export interface GlobalCartItem {
   id: string;
@@ -11,7 +11,6 @@ export interface GlobalCartItem {
   name: string;
   image: string;
   price: number;
-  unit?: string;
   kg?: number; // Weight in kg from Firestore
 }
 
@@ -32,7 +31,6 @@ interface GlobalCartContextType {
   clearCart: () => void;
   getCartCount: () => number;
   getTotalKg: () => number;
-  getTotalKgExact: () => number;
   getKgRange: () => string;
   // Cross-store guard
   blockedStoreAttempt: BlockedStoreAttempt | null;
@@ -157,11 +155,6 @@ export const GlobalCartProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return cart.reduce((total, item) => total + (item.kg || 0), 0);
   }, [cart]);
 
-  const getTotalKgExact = useCallback(() => {
-    const total = cart.reduce((sum, item) => sum + (item.kg || 0), 0);
-    return Math.round(total * 100) / 100;
-  }, [cart]);
-
   // Get the kg range string for API calls based on total weight
   const getKgRange = useCallback(() => {
     const totalKg = getTotalKg();
@@ -184,7 +177,6 @@ export const GlobalCartProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     clearCart,
     getCartCount,
     getTotalKg,
-    getTotalKgExact,
     getKgRange,
     blockedStoreAttempt,
     clearBlockedAttempt,

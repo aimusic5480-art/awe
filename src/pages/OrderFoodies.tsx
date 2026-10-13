@@ -1,21 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ShoppingCart, Plus, Minus } from 'lucide-react';
 import { useGlobalCart } from '../contexts/GlobalCartContext';
 import { CrossStoreModal } from '../components/CrossStoreModal';
 import { fetchStoreById, fetchProductsByStore } from '../services/storeService';
-import { buildAvailableTabs, Product } from '../data/storesData';
-import { DEFAULT_ITEM_KG, parseUnitToKg } from '../utils/weightUtils';
-
-const foodTabDefinitions = [
-  { value: 'food', label: 'Food' },
-  { value: 'drinks', label: 'Drinks' },
-  { value: 'dessert', label: 'Dessert' },
-];
-
-const getFoodCategory = (product: Product) =>
-  (product.foodCategory || 'food').trim().toLowerCase();
+import { Product } from '../data/storesData';
 
 // Skeleton Card Component - Uber/Bolt style animated placeholder
 const ProductSkeletonCard: React.FC<{ index: number }> = ({ index }) => (
@@ -90,9 +80,7 @@ export const OrderFoodies: React.FC = () => {
   const cartCount = cart.length;
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
-  const buildCartItem = (product: Product) => {
-    const explicitKg = (product as Product & { weightKg?: number }).weightKg;
-    return {
+  const buildCartItem = (product: Product) => ({
     id: `${product.id}-${Date.now()}`,
     storeId: storeId!,
     storeName: storeName,
@@ -101,12 +89,7 @@ export const OrderFoodies: React.FC = () => {
     name: product.name,
     image: product.imageUrl,
     price: product.price,
-    kg: typeof explicitKg === 'number' && explicitKg > 0
-      ? explicitKg
-      : parseUnitToKg(product.unit, DEFAULT_ITEM_KG.food),
-    unit: product.unit,
-    };
-  }
+  });
 
   const handleAddToCart = (product: Product) => {
     const added = addToCart(buildCartItem(product));
@@ -137,7 +120,7 @@ export const OrderFoodies: React.FC = () => {
 
   const handleCompleteOrder = () => {
     if (cartCount === 0) return;
-    navigate('/foodies-route');
+    navigate('/foodies-route', { replace: true });
   };
 
   const containerVariants = {
@@ -160,23 +143,14 @@ export const OrderFoodies: React.FC = () => {
     }
   };
 
-  const foodTabs = useMemo(
-    () => buildAvailableTabs(products, foodTabDefinitions, getFoodCategory),
-    [products],
-  );
-  const activeFoodCategory = foodTabs.some(tab => tab.value === selectedFoodCategory)
-    ? selectedFoodCategory
-    : foodTabs[0]?.value ?? 'food';
+  const foodTabs = [
+    { value: 'food', label: 'Food' },
+    { value: 'drinks', label: 'Drinks' },
+    { value: 'dessert', label: 'Dessert' }
+  ];
 
-  useEffect(() => {
-    if (foodTabs.length > 0 && !foodTabs.some(tab => tab.value === selectedFoodCategory)) {
-      setSelectedFoodCategory(foodTabs[0].value);
-    }
-  }, [foodTabs, selectedFoodCategory]);
-
-  const filteredProducts = useMemo(
-    () => products.filter(product => getFoodCategory(product) === activeFoodCategory),
-    [products, activeFoodCategory],
+  const filteredProducts = products.filter((product) =>
+    (product.foodCategory || 'food').toLowerCase() === selectedFoodCategory
   );
 
   if (loading) {
@@ -269,34 +243,32 @@ export const OrderFoodies: React.FC = () => {
         className="flex-1 overflow-y-auto px-4 pb-24 pt-4"
         style={{ marginTop: '120px' }}
       >
-        {foodTabs.length > 1 && (
-          <div
-            className="mb-4 flex gap-2 overflow-x-auto pb-1"
-            role="tablist"
-            aria-label="Food categories"
-          >
-            {foodTabs.map(tab => {
-              const isSelected = activeFoodCategory === tab.value;
+        <div
+          className="mb-4 flex gap-2 overflow-x-auto pb-1"
+          role="tablist"
+          aria-label="Food categories"
+        >
+          {foodTabs.map((tab) => {
+            const isSelected = selectedFoodCategory === tab.value;
 
-              return (
-                <button
-                  key={tab.value}
-                  type="button"
-                  role="tab"
-                  aria-selected={isSelected}
-                  onClick={() => setSelectedFoodCategory(tab.value)}
-                  className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold transition-colors ${
-                    isSelected
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'bg-white text-gray-600 shadow-sm hover:bg-purple-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => setSelectedFoodCategory(tab.value)}
+                className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold transition-colors ${
+                  isSelected
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-white text-gray-600 shadow-sm hover:bg-purple-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
 
         {filteredProducts.length > 0 ? (
           <div className="grid grid-cols-2 gap-4">

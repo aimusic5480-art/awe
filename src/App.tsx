@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -27,23 +27,25 @@ import { OrderFoodies } from './pages/OrderFoodies';
 import { OrderClothes } from './pages/OrderClothes';
 import { OrderHardware } from './pages/OrderHardware';
 import { OrderSoweto } from './pages/OrderSoweto';
-import { OrderSmallShops } from './pages/OrderSmallShops';
 import { FoodiesRoute } from './pages/FoodiesRoute';
 import { FoodDelivery } from './pages/FoodDelivery';
 import { OrderTrackingPage } from './pages/OrderTrackingPage';
 import { LiveTrackingPage } from './pages/LiveTrackingPage';
 import { MessageProvider } from './contexts/MessageContext';
+import { RideProvider } from './contexts/RideContext';
 import { OrderSessionProvider } from './contexts/OrderSessionContext';
 import { FoodOrderSessionProvider } from './contexts/FoodOrderSession';
 import { GlobalCartProvider } from './contexts/GlobalCartContext';
+import { CurrentRideBar } from './components/CurrentRideBar';
+import { WaitingForDriverBar } from './components/WaitingForDriverBar';
+import { RatingModal } from './components/RatingModal';
 import { PageTransition } from './components/PageTransition';
 import { useUserProfile } from './hooks/useUserProfile';
+import { useFirebaseRide } from './hooks/useFirebaseRide';
+import { firebaseService } from './services/firebaseService';
+import { getETA } from './utils/etaCalculation';
 import { useNotificationPermission } from './hooks/useNotificationPermission';
 import { CallProvider } from './contexts/CallContext';
-import { CallOverlay } from './components/CallOverlay';
-import { ActiveOrderProvider, ACTIVE_ORDER_POLICY, buildTrackingState, useActiveOrder } from './hooks/useActiveOrder';
-import { ActiveOrderGate } from './components/ActiveOrderGate';
-import { PendingRatingHost } from './components/PendingRatingHost';
 
 interface AppState {
   selectedDestination: string;
@@ -62,7 +64,6 @@ function AppContent({ userId }: { userId: string }) {
   }, [userId]);
   const location = useLocation();
   const { profile } = useUserProfile(userId);
-  const { order, orderId, isLoading: isActiveOrderLoading } = useActiveOrder();
 
   const [appState, setAppState] = useState<AppState>({
     selectedDestination: '',
@@ -70,11 +71,14 @@ function AppContent({ userId }: { userId: string }) {
     selectedStops: [],
     selectedCarType: '',
     selectedPrice: 0,
-    currentRideId: null,
+    currentRideId: localStorage.getItem('currentRideId'),
   });
 
-  const trackingOrderId = orderId ?? appState.currentRideId;
-  const [isPendingRatingOpen, setIsPendingRatingOpen] = useState(false);
+  const { currentRide } = useFirebaseRide(appState.currentRideId);
+  const [rideStatus, setRideStatus] = useState<string | null>(null);
+  const [driverInfo, setDriverInfo] = useState<any>(null);
+  const [eta, setEta] = useState('3 mins');
+  const [showRatingModal, setShowRatingModal] = useState(false);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
 
   const handleForegroundMessage = useCallback((title: string, body: string) => {
@@ -88,22 +92,76 @@ function AppContent({ userId }: { userId: string }) {
   // throttled reverse geocoding are now owned by the global LocationProvider
   // (wired in main.tsx). Pages read it via useGeolocation / useLocation.
 
-  if (isActiveOrderLoading) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-white text-gray-600 dark:bg-gray-950 dark:text-gray-300">
-        Loading your orders…
-      </div>
-    );
-  }
+  useEffect(() => {
+    const rideId = localStorage.getItem('currentRideId');
+    if (rideId) {
+      setAppState(prev => ({ ...prev, currentRideId: rideId }));
+      navigate('/');
+    }
+  }, []);
 
-  const redirectToActiveOrder = () => {
-    if (!order || !orderId) return false;
-    navigate(ACTIVE_ORDER_POLICY.routeForOrder(order), {
-      replace: true,
-      state: buildTrackingState(order, orderId),
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('Back online, syncing ride state...');
+      const rideId = localStorage.getItem('currentRideId');
+      if (rideId) {
+        setAppState(prev => ({ ...prev, currentRideId: rideId }));
+        navigate('/');
+      }
+    };
+
+    const handleOffline = () => {
+      console.warn('No internet connection. Reconnecting when available...');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!appState.currentRideId) return;
+
+    const unsubscribe = firebaseService.listenToRideStatus(appState.currentRideId, (statusData) => {
+      if (statusData) {
+        setRideStatus(statusData.status);
+
+        if (statusData.status === 'pending' && location.pathname !== '/waiting-for-driver') {
+          navigate('/waiting-for-driver');
+        }
+
+        if (statusData.status === 'accepted' && location.pathname !== '/driver-coming') {
+          navigate('/driver-coming');
+        }
+
+        if (statusData.status === 'arrived' || statusData.status === 'in_progress') {
+          if (location.pathname !== '/driver-coming') {
+            navigate('/driver-coming');
+          }
+        }
+
+        if (statusData.status === 'completed') {
+          setShowRatingModal(true);
+        }
+      }
     });
-    return true;
-  };
+
+    return () => unsubscribe();
+  }, [appState.currentRideId, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (currentRide?.driverId) {
+      firebaseService.getDriverInfo(currentRide.driverId).then((driver) => {
+        if (driver) {
+          setDriverInfo(driver);
+        }
+      });
+    }
+  }, [currentRide?.driverId]);
 
   const handleRouteComplete = (pickup: string, destination: string, stops: string[]) => {
     setAppState(prev => ({
@@ -115,19 +173,31 @@ function AppContent({ userId }: { userId: string }) {
   };
 
   const handleSearchSelect = (address: string) => {
-    if (redirectToActiveOrder()) return;
+    if (isRideActive()) {
+      alert('You already have an active ride.');
+      navigate('/driver-coming');
+      return;
+    }
     setAppState(prev => ({ ...prev, selectedDestination: address }));
     navigate('/select-ride');
   };
 
   const handleRideSelect = (carType: string, price: number) => {
-    if (redirectToActiveOrder()) return;
+    if (isRideActive()) {
+      alert('You already have an active ride.');
+      navigate('/driver-coming');
+      return;
+    }
     setAppState(prev => ({ ...prev, selectedCarType: carType, selectedPrice: price }));
     navigate('/confirm-order');
   };
 
   const handleConfirmOrder = () => {
-    if (redirectToActiveOrder()) return;
+    if (isRideActive()) {
+      alert('You already have an active ride.');
+      navigate('/driver-coming');
+      return;
+    }
     navigate('/waiting-for-driver');
   };
 
@@ -135,34 +205,100 @@ function AppContent({ userId }: { userId: string }) {
     if (rideId) {
       setAppState(prev => ({ ...prev, currentRideId: rideId }));
     }
-    if (!redirectToActiveOrder()) navigate('/driver-coming');
+    navigate('/driver-coming');
   };
 
   const handleRideCreated = (rideId: string) => {
+    localStorage.setItem('currentRideId', rideId);
     setAppState(prev => ({ ...prev, currentRideId: rideId }));
   };
 
-  const handleBack = () => navigate(-1);
+  const handleBack = () => {
+    const blockedPaths = ['/waiting-for-driver', '/confirm-order', '/select-ride'];
+
+    if (isRideActive() || isPending()) {
+      const message = isPending()
+        ? 'You already have an active request.'
+        : 'You already have an active ride.';
+      const destination = isPending() ? '/waiting-for-driver' : '/driver-coming';
+
+      if (blockedPaths.includes(location.pathname)) {
+        alert(message);
+        navigate(destination);
+        return;
+      }
+
+      alert(message);
+      navigate(destination);
+      return;
+    }
+    navigate(-1);
+  };
 
   const handleCancelToHome = () => {
+    localStorage.removeItem('currentRideId');
     setAppState(prev => ({ ...prev, currentRideId: null }));
+    setRideStatus(null);
     navigate('/', { replace: true });
+  };
+
+  const handleSubmitRating = async (rating: number, feedback: string) => {
+    if (!appState.currentRideId || !currentRide?.driverId || !profile?.id) return;
+
+    try {
+      await firebaseService.submitRating(
+        currentRide.driverId,
+        appState.currentRideId,
+        rating,
+        feedback,
+        profile.id
+      );
+      localStorage.removeItem('currentRideId');
+      setShowRatingModal(false);
+      setAppState(prev => ({ ...prev, currentRideId: null }));
+      setRideStatus(null);
+      navigate('/');
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+    }
+  };
+
+  const isRideActive = () => {
+    return rideStatus === 'accepted' || rideStatus === 'arrived' || rideStatus === 'in_progress';
+  };
+
+  const isPending = () => {
+    return rideStatus === 'pending';
   };
 
   return (
     <GlobalCartProvider>
       <OrderSessionProvider>
         <FoodOrderSessionProvider>
-          <MessageProvider userId={profile?.id || null} rideId={trackingOrderId}>
+          <MessageProvider userId={profile?.id || null} rideId={appState.currentRideId}>
+            <RideProvider rideId={appState.currentRideId}>
           <div className="app">
-            <ActiveOrderGate isRatingModalOpen={isPendingRatingOpen} />
-            <PendingRatingHost onOpenChange={setIsPendingRatingOpen} />
             {pushToast && (
               <div className="fixed top-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-xl bg-gray-900 px-4 py-3 text-white shadow-lg" role="status">
                 <p className="font-semibold">{pushToast.title}</p>
                 {pushToast.body && <p className="mt-1 text-sm text-gray-200">{pushToast.body}</p>}
               </div>
             )}
+          <AnimatePresence>
+            {isRideActive() && driverInfo && location.pathname !== '/driver-coming' && (
+              <CurrentRideBar
+                driverName={driverInfo.name}
+                carModel={driverInfo.carModel}
+                eta={eta}
+                status={rideStatus || 'accepted'}
+              />
+            )}
+
+            {isPending() && location.pathname !== '/waiting-for-driver' && (
+              <WaitingForDriverBar />
+            )}
+          </AnimatePresence>
+
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
               <Route
@@ -171,6 +307,10 @@ function AppContent({ userId }: { userId: string }) {
                   <PageTransition>
                     <Dashboard
                       onSearchSelect={(address) => {
+                        if (isRideActive()) {
+                          alert('You already have an active ride.');
+                          return;
+                        }
                         handleSearchSelect(address);
                       }}
                     />
@@ -181,7 +321,11 @@ function AppContent({ userId }: { userId: string }) {
                 path="/your-route"
                 element={
                   <PageTransition>
-                    <YourRoute onRouteComplete={handleRouteComplete} />
+                    {isRideActive() ? (
+                      <Dashboard onSearchSelect={() => alert('You already have an active ride.')} />
+                    ) : (
+                      <YourRoute onRouteComplete={handleRouteComplete} />
+                    )}
                   </PageTransition>
                 }
               />
@@ -246,10 +390,6 @@ function AppContent({ userId }: { userId: string }) {
                 element={<PageTransition><OrderSoweto /></PageTransition>}
               />
               <Route
-                path="/order-small-shops/:storeId"
-                element={<PageTransition><OrderSmallShops /></PageTransition>}
-              />
-              <Route
                 path="/foodies-route"
                 element={<PageTransition><FoodiesRoute /></PageTransition>}
               />
@@ -269,13 +409,17 @@ function AppContent({ userId }: { userId: string }) {
                 path="/select-ride"
                 element={
                   <PageTransition>
-                    <SelectRide
-                      destination={appState.selectedDestination}
-                      pickup={appState.selectedPickup}
-                      stops={appState.selectedStops}
-                      onBack={handleBack}
-                      onSelectRide={handleRideSelect}
-                    />
+                    {isRideActive() ? (
+                      <Dashboard onSearchSelect={() => alert('You already have an active ride.')} />
+                    ) : (
+                      <SelectRide
+                        destination={appState.selectedDestination}
+                        pickup={appState.selectedPickup}
+                        stops={appState.selectedStops}
+                        onBack={handleBack}
+                        onSelectRide={handleRideSelect}
+                      />
+                    )}
                   </PageTransition>
                 }
               />
@@ -283,16 +427,20 @@ function AppContent({ userId }: { userId: string }) {
                 path="/confirm-order"
                 element={
                   <PageTransition>
-                    <ConfirmOrder
-                      destination={appState.selectedDestination}
-                      pickup={appState.selectedPickup}
-                      stops={appState.selectedStops}
-                      carType={appState.selectedCarType}
-                      price={appState.selectedPrice}
-                      onBack={handleBack}
-                      onRideConfirmed={handleConfirmOrder}
-                      onRideCreated={handleRideCreated}
-                    />
+                    {isRideActive() || isPending() ? (
+                      <Dashboard onSearchSelect={() => alert('You already have an active ride.')} />
+                    ) : (
+                      <ConfirmOrder
+                        destination={appState.selectedDestination}
+                        pickup={appState.selectedPickup}
+                        stops={appState.selectedStops}
+                        carType={appState.selectedCarType}
+                        price={appState.selectedPrice}
+                        onBack={handleBack}
+                        onRideConfirmed={handleConfirmOrder}
+                        onRideCreated={handleRideCreated}
+                      />
+                    )}
                   </PageTransition>
                 }
               />
@@ -306,7 +454,7 @@ function AppContent({ userId }: { userId: string }) {
                       stops={appState.selectedStops}
                       carType={appState.selectedCarType}
                       price={appState.selectedPrice}
-                      currentRideId={trackingOrderId}
+                      currentRideId={appState.currentRideId}
                       onCancel={handleCancelToHome}
                       onDriverFound={handleDriverFound}
                     />
@@ -323,7 +471,7 @@ function AppContent({ userId }: { userId: string }) {
                       stops={appState.selectedStops}
                       carType={appState.selectedCarType}
                       price={appState.selectedPrice}
-                      currentRideId={trackingOrderId}
+                      currentRideId={appState.currentRideId}
                       onBack={handleCancelToHome}
                     />
                   </PageTransition>
@@ -332,7 +480,17 @@ function AppContent({ userId }: { userId: string }) {
             </Routes>
           </AnimatePresence>
 
+          {showRatingModal && driverInfo && (
+            <RatingModal
+              isOpen={showRatingModal}
+              onClose={() => {}}
+              driverName={driverInfo.name}
+              driverPhoto={driverInfo.photo}
+              onSubmitRating={handleSubmitRating}
+            />
+          )}
         </div>
+          </RideProvider>
           </MessageProvider>
         </FoodOrderSessionProvider>
       </OrderSessionProvider>
@@ -377,12 +535,7 @@ function App() {
           style={{ minHeight: '100vh' }}
         >
           <Router>
-            <ActiveOrderProvider uid={authUser!.uid}>
-              <CallProvider>
-                <AppContent userId={authUser!.uid} />
-                <CallOverlay />
-              </CallProvider>
-            </ActiveOrderProvider>
+            <CallProvider><AppContent userId={authUser!.uid} /></CallProvider>
           </Router>
         </motion.div>
       ) : (
